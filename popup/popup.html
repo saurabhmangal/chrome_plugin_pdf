@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AI PDF Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <div class="header-left">
+      <span class="header-icon">📄</span>
+      <span class="header-title">AI PDF Assistant</span>
+    </div>
+    <button id="settingsBtn" class="icon-btn" title="Settings">⚙</button>
+  </header>
+
+  <!-- Current page URL -->
+  <div class="page-url" id="pageUrl">Loading...</div>
+
+  <!-- No API key warning -->
+  <div id="noKeyWarning" class="warning hidden">
+    No API key set. <a id="openSettings" href="#">Open Settings →</a>
+  </div>
+
+  <!-- PDF Export -->
+  <section class="card">
+    <button id="pdfBtn" class="btn-action">
+      <span class="btn-icon">⬇</span>
+      <span id="pdfBtnLabel">Export to PDF</span>
+    </button>
+    <div id="pdfStatus" class="status-line"></div>
+  </section>
+
+  <!-- Summary -->
+  <section class="card">
+    <div class="section-header">
+      <span class="section-title">Page Summary</span>
+      <button id="redoSummaryBtn" class="btn-redo" title="Re-generate summary">↻</button>
+    </div>
+    <div id="summaryState" class="content-area">
+      <button id="summarizeBtn" class="btn-secondary">Generate Summary</button>
+    </div>
+  </section>
+
+  <!-- Chat -->
+  <section class="card chat-card">
+    <div class="section-header">
+      <span class="section-title">Chat with this page</span>
+      <button id="clearChatBtn" class="btn-clear">Clear</button>
+    </div>
+    <div id="chatMessages" class="chat-messages"></div>
+    <div class="chat-input-row">
+      <input id="chatInput" type="text" placeholder="Ask a question about this page..." />
+      <button id="sendBtn" class="btn-send">Send</button>
+    </div>
+    <div id="agentStatus" class="agent-status hidden"></div>
+  </section>
+
+  <script src="popup.js"></script>
+</body>
+</html>

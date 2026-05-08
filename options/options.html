@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI PDF Assistant — Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div class="logo">
+        <span class="logo-icon">📄</span>
+        <h1>AI PDF Assistant</h1>
+      </div>
+      <p class="subtitle">Settings</p>
+    </header>
+
+    <section class="card">
+      <h2>AI Provider</h2>
+      <div class="radio-group">
+        <label class="radio-option">
+          <input type="radio" name="provider" value="gemini" checked>
+          <div class="radio-content">
+            <span class="radio-title">Google Gemini</span>
+            <span class="radio-desc">gemini-2.0-flash — fast and capable</span>
+          </div>
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="provider" value="anthropic">
+          <div class="radio-content">
+            <span class="radio-title">Anthropic Claude</span>
+            <span class="radio-desc">claude-sonnet-4-6 — best reasoning</span>
+          </div>
+        </label>
+        <label class="radio-option">
+          <input type="radio" name="provider" value="openai">
+          <div class="radio-content">
+            <span class="radio-title">OpenAI GPT-4o</span>
+            <span class="radio-desc">gpt-4o — widely used</span>
+          </div>
+        </label>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>API Keys</h2>
+
+      <div class="key-group" id="key-gemini">
+        <label for="geminiKey">Gemini API Key</label>
+        <div class="key-input-row">
+          <input type="password" id="geminiKey" placeholder="AIza..." autocomplete="off">
+          <button class="btn-show" data-target="geminiKey">Show</button>
+        </div>
+        <a class="get-key-link" href="https://aistudio.google.com/app/apikey" target="_blank">Get a Gemini key →</a>
+      </div>
+
+      <div class="key-group hidden" id="key-anthropic">
+        <label for="anthropicKey">Anthropic API Key</label>
+        <div class="key-input-row">
+          <input type="password" id="anthropicKey" placeholder="sk-ant-..." autocomplete="off">
+          <button class="btn-show" data-target="anthropicKey">Show</button>
+        </div>
+        <a class="get-key-link" href="https://console.anthropic.com/settings/keys" target="_blank">Get an Anthropic key →</a>
+      </div>
+
+      <div class="key-group hidden" id="key-openai">
+        <label for="openaiKey">OpenAI API Key</label>
+        <div class="key-input-row">
+          <input type="password" id="openaiKey" placeholder="sk-..." autocomplete="off">
+          <button class="btn-show" data-target="openaiKey">Show</button>
+        </div>
+        <a class="get-key-link" href="https://platform.openai.com/api-keys" target="_blank">Get an OpenAI key →</a>
+      </div>
+    </section>
+
+    <div class="actions">
+      <button id="saveBtn" class="btn-primary">Save Settings</button>
+      <span id="saveStatus" class="save-status"></span>
+    </div>
+
+    <section class="card info-card">
+      <h2>How it works</h2>
+      <ul>
+        <li>Your API key is stored locally in Chrome's sync storage.</li>
+        <li>It is never sent to any server other than the AI provider's API.</li>
+        <li>Keys sync across your Chrome-signed-in devices.</li>
+      </ul>
+    </section>
+  </div>
+  <script src="options.js"></script>
+</body>
+</html>
