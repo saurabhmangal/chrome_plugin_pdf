@@ -15,6 +15,25 @@ const SUMMARIZE_MESSAGE = `Summarize this webpage. Include:
 3. Who the intended audience appears to be
 Format your response as clean markdown.`;
 
+// ─── Helpers ───────────────────────────────────────────────────────────────
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Inject content script if the tab didn't have it loaded (e.g. tab was open before extension reload)
+async function ensureContentScript(tabId) {
+  try {
+    await chrome.tabs.sendMessage(tabId, { action: "PING" });
+  } catch (_) {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["content/content.js"]
+    });
+    await sleep(150);
+  }
+}
+
 // ─── Tool executor ─────────────────────────────────────────────────────────
 
 async function executeTool(toolName, toolInput, tabId) {
@@ -140,6 +159,7 @@ async function handlePdfExport(tab, sendResponse) {
   const tabId = tab.id;
 
   try {
+    await ensureContentScript(tabId);
     pushStatus("Preparing page capture...", "extract");
 
     // 1. Scroll to top, hide fixed overlays, get page dimensions
@@ -244,6 +264,7 @@ async function handleSummarize(tab, sendResponse) {
   if (!apiKey) { sendResponse({ success: false, error: "NO_API_KEY" }); return; }
 
   try {
+    await ensureContentScript(tab.id);
     pushStatus("Extracting page content...", "extract");
     const { reply } = await runAgentLoop(SUMMARIZE_MESSAGE, [], tab.id, provider, apiKey);
     sendResponse({ success: true, summary: reply });
@@ -259,6 +280,7 @@ async function handleChat(message, tab, sendResponse) {
   if (!apiKey) { sendResponse({ success: false, error: "NO_API_KEY" }); return; }
 
   try {
+    await ensureContentScript(tab.id);
     const history = await getChatHistory();
     const { reply, messages } = await runAgentLoop(message, history, tab.id, provider, apiKey);
     await saveChatHistory(messages);

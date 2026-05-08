@@ -106,6 +106,11 @@ function injectPrintStyles() {
 // ─── Message listener ─────────────────────────────────────────────────────────
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === "PING") {
+    sendResponse({ alive: true });
+    return true;
+  }
+
   if (request.action === "EXTRACT_CONTENT") {
     sendResponse(extractPageContent());
     return true;
