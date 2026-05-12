@@ -1,12 +1,17 @@
 import {
-  callGemini, callAnthropic, callOpenAI,
+  callGemini, callAnthropic, callOpenAI, callMistral,
   normalizeResponse, buildToolResultMessage, toProviderMessage,
   TOOLS_GEMINI, TOOLS_ANTHROPIC, TOOLS_OPENAI
 } from "../shared/ai.js";
 
-const SYSTEM_PROMPT = `You are a helpful assistant that answers questions about the content of webpages.
-You have tools to read the current page. Always use get_page_content or get_page_metadata before answering — never rely on training memory alone.
-When you have gathered enough information, use answer_from_content to deliver your final answer in clear, well-formatted markdown.
+const SYSTEM_PROMPT = `You are a helpful assistant that can read and act on the current webpage.
+Available tools:
+- get_page_content / get_page_metadata: Read the page before answering — never rely on training memory.
+- export_pdf: Actually exports and downloads the page as a PDF file. Call this when the user asks to save or download as PDF.
+- answer_from_content: Deliver your final markdown answer. Always call this last to respond to the user.
+
+When asked for both a summary AND a PDF: call export_pdf first, then get_page_content, then answer_from_content with the summary.
+When asked only for a PDF: call export_pdf, then answer_from_content confirming the download.
 Be concise. Prefer bullet points for lists of facts.`;
 
 const SUMMARIZE_MESSAGE = `Summarize this webpage. Include:
@@ -36,7 +41,8 @@ async function ensureContentScript(tabId) {
 
 // ─── Tool executor ─────────────────────────────────────────────────────────
 
-async function executeTool(toolName, toolInput, tabId) {
+async function executeTool(toolName, toolInput, tab) {
+  const tabId = tab.id;
   switch (toolName) {
     case "get_page_content": {
       const res = await chrome.tabs.sendMessage(tabId, { action: "EXTRACT_CONTENT" });
@@ -50,6 +56,10 @@ async function executeTool(toolName, toolInput, tabId) {
     case "scroll_to_section": {
       await chrome.tabs.sendMessage(tabId, { action: "SCROLL_TO", position: toolInput.position_px });
       return `Scrolled to position ${toolInput.position_px}px`;
+    }
+    case "export_pdf": {
+      const filename = await exportPdfCore(tab);
+      return `PDF exported and downloaded as "${filename}"`;
     }
     case "answer_from_content": {
       return { __final_answer: toolInput.answer };
@@ -71,13 +81,14 @@ async function callLLM(provider, systemPrompt, messages, apiKey) {
   const tools = getTools(provider);
   if (provider === "gemini") return callGemini(systemPrompt, messages, apiKey, tools);
   if (provider === "anthropic") return callAnthropic(systemPrompt, messages, apiKey, tools);
+  if (provider === "mistral") return callMistral(systemPrompt, messages, apiKey, tools);
   return callOpenAI(systemPrompt, messages, apiKey, tools);
 }
 
 // ─── Agent loop ────────────────────────────────────────────────────────────
 
-async function runAgentLoop(userMessage, chatHistory, tabId, provider, apiKey) {
-  const MAX_ITERATIONS = 6;
+async function runAgentLoop(userMessage, chatHistory, tab, provider, apiKey) {
+  const MAX_ITERATIONS = 8;
 
   // Build initial messages in provider format
   const userMsg = toProviderMessage("user", userMessage, provider);
@@ -107,7 +118,7 @@ async function runAgentLoop(userMessage, chatHistory, tabId, provider, apiKey) {
     const toolResults = [];
     for (const tc of normalized.toolCalls) {
       pushStatus(`Calling tool: ${tc.name}...`, "tool_call");
-      const result = await executeTool(tc.name, tc.input, tabId);
+      const result = await executeTool(tc.name, tc.input, tab);
       if (result && result.__final_answer) {
         return { reply: result.__final_answer, messages };
       }
@@ -147,76 +158,74 @@ async function saveChatHistory(messages) {
 // ─── Settings helper ───────────────────────────────────────────────────────
 
 async function getProviderAndKey() {
-  const s = await chrome.storage.sync.get(["aiProvider", "geminiKey", "anthropicKey", "openaiKey"]);
+  const s = await chrome.storage.sync.get(["aiProvider", "geminiKey", "anthropicKey", "openaiKey", "mistralKey"]);
   const provider = s.aiProvider || "gemini";
-  const keyMap = { gemini: s.geminiKey, anthropic: s.anthropicKey, openai: s.openaiKey };
+  const keyMap = { gemini: s.geminiKey, anthropic: s.anthropicKey, openai: s.openaiKey, mistral: s.mistralKey };
   return { provider, apiKey: keyMap[provider] };
 }
 
 // ─── PDF export — screenshot stitching ────────────────────────────────────────
 
-async function handlePdfExport(tab, sendResponse) {
+async function exportPdfCore(tab) {
   const tabId = tab.id;
+  await ensureContentScript(tabId);
+  pushStatus("Preparing page capture...", "extract");
 
-  try {
-    await ensureContentScript(tabId);
-    pushStatus("Preparing page capture...", "extract");
+  const dims = await chrome.tabs.sendMessage(tabId, { action: "PREPARE_CAPTURE" });
+  const { pageHeight, viewportHeight, viewportWidth } = dims;
 
-    // 1. Scroll to top, hide fixed overlays, get page dimensions
-    const dims = await chrome.tabs.sendMessage(tabId, { action: "PREPARE_CAPTURE" });
-    const { pageHeight, viewportHeight, viewportWidth } = dims;
+  const screenshots = [];
+  let scrollY = 0;
+  let pageNum = 0;
+  const MAX_PAGES = 50;
 
-    const screenshots = [];
-    let scrollY = 0;
-    let pageNum = 0;
-    const MAX_PAGES = 50; // safety cap — ~50 screens
+  // captureVisibleTab is rate-limited to 2/sec; keep total cycle ≥ 650ms
+  while (scrollY < pageHeight && pageNum < MAX_PAGES) {
+    pageNum++;
+    pushStatus(`Capturing screen ${pageNum}...`, "extract");
 
-    // 2. Screenshot loop: scroll → wait → capture
-    while (scrollY < pageHeight && pageNum < MAX_PAGES) {
-      pageNum++;
-      pushStatus(`Capturing screen ${pageNum}...`, "extract");
-
-      await chrome.tabs.sendMessage(tabId, {
-        action: "SCROLL_TO_CAPTURE",
-        position: scrollY,
-        // Give extra time on first scroll, less on subsequent ones
-        delay: pageNum === 1 ? 500 : 300
-      });
-
-      const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
-        format: "jpeg",
-        quality: 92
-      });
-
-      screenshots.push(dataUrl);
-      scrollY += viewportHeight;
-    }
-
-    // 3. Restore page scroll position and show fixed elements again
-    await chrome.tabs.sendMessage(tabId, { action: "RESTORE_SCROLL" });
-
-    // Height of the last slice (may be shorter than a full viewport)
-    const remainder = pageHeight % viewportHeight;
-    const lastSliceHeight = remainder > 0 ? remainder : viewportHeight;
-
-    pushStatus(`Stitching ${screenshots.length} screens into PDF...`, "ai_call");
-
-    // 4. Stitch screenshots into PDF via offscreen document
-    const pdfBase64 = await stitchViaOffscreen(
-      screenshots, viewportWidth, viewportHeight, lastSliceHeight
-    );
-
-    // 5. Download
-    const filename = sanitizeFilename(tab.title) + "-" + Date.now() + ".pdf";
-    await chrome.downloads.download({
-      url: "data:application/pdf;base64," + pdfBase64,
-      filename
+    await chrome.tabs.sendMessage(tabId, {
+      action: "SCROLL_TO_CAPTURE",
+      position: scrollY,
+      delay: pageNum === 1 ? 500 : 400
     });
 
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
+      format: "jpeg",
+      quality: 92
+    });
+
+    screenshots.push(dataUrl);
+    scrollY += viewportHeight;
+    await sleep(250);
+  }
+
+  await chrome.tabs.sendMessage(tabId, { action: "RESTORE_SCROLL" });
+
+  const remainder = pageHeight % viewportHeight;
+  const lastSliceHeight = remainder > 0 ? remainder : viewportHeight;
+
+  pushStatus(`Stitching ${screenshots.length} screens into PDF...`, "ai_call");
+
+  const pdfBase64 = await stitchViaOffscreen(
+    screenshots, viewportWidth, viewportHeight, lastSliceHeight
+  );
+
+  const filename = sanitizeFilename(tab.title) + "-" + Date.now() + ".pdf";
+  await chrome.downloads.download({
+    url: "data:application/pdf;base64," + pdfBase64,
+    filename
+  });
+
+  return filename;
+}
+
+async function handlePdfExport(tab, sendResponse) {
+  try {
+    const filename = await exportPdfCore(tab);
     sendResponse({ success: true, filename });
   } catch (err) {
-    // Fallback: restore scroll even on error
-    try { await chrome.tabs.sendMessage(tabId, { action: "RESTORE_SCROLL" }); } catch (_) {}
+    try { await chrome.tabs.sendMessage(tab.id, { action: "RESTORE_SCROLL" }); } catch (_) {}
     sendResponse({ success: false, error: err.message });
   }
 }
@@ -266,7 +275,7 @@ async function handleSummarize(tab, sendResponse) {
   try {
     await ensureContentScript(tab.id);
     pushStatus("Extracting page content...", "extract");
-    const { reply } = await runAgentLoop(SUMMARIZE_MESSAGE, [], tab.id, provider, apiKey);
+    const { reply } = await runAgentLoop(SUMMARIZE_MESSAGE, [], tab, provider, apiKey);
     sendResponse({ success: true, summary: reply });
   } catch (err) {
     sendResponse({ success: false, error: err.message });
@@ -282,7 +291,7 @@ async function handleChat(message, tab, sendResponse) {
   try {
     await ensureContentScript(tab.id);
     const history = await getChatHistory();
-    const { reply, messages } = await runAgentLoop(message, history, tab.id, provider, apiKey);
+    const { reply, messages } = await runAgentLoop(message, history, tab, provider, apiKey);
     await saveChatHistory(messages);
     sendResponse({ success: true, reply });
   } catch (err) {
@@ -295,7 +304,7 @@ async function handleChat(message, tab, sendResponse) {
 async function handleValidateKey(provider, apiKey, sendResponse) {
   try {
     if (provider === "gemini") {
-      const model = "gemini-1.5-flash-latest";
+      const model = "gemini-2.0-flash";
       const res = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
         {
@@ -314,6 +323,14 @@ async function handleValidateKey(provider, apiKey, sendResponse) {
       });
       if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message || `Status ${res.status}`); }
       sendResponse({ success: true, model: "claude-haiku-4-5-20251001" });
+    } else if (provider === "mistral") {
+      const res = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ model: "mistral-small-latest", max_tokens: 1, messages: [{ role: "user", content: "hi" }] })
+      });
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.error?.message || `Status ${res.status}`); }
+      sendResponse({ success: true, model: "mistral-small-latest" });
     } else {
       const res = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",

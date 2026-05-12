@@ -26,9 +26,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   pageUrlEl.textContent = tab?.url || "";
 
   // Check if API key is configured
-  const settings = await chrome.storage.sync.get(["aiProvider", "geminiKey", "anthropicKey", "openaiKey"]);
+  const settings = await chrome.storage.sync.get(["aiProvider", "geminiKey", "anthropicKey", "openaiKey", "mistralKey"]);
   const provider = settings.aiProvider || "gemini";
-  const keyMap = { gemini: settings.geminiKey, anthropic: settings.anthropicKey, openai: settings.openaiKey };
+  const keyMap = { gemini: settings.geminiKey, anthropic: settings.anthropicKey, openai: settings.openaiKey, mistral: settings.mistralKey };
   if (!keyMap[provider]) {
     noKeyWarning.classList.remove("hidden");
   }

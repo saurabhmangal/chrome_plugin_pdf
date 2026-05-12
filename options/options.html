@@ -40,6 +40,13 @@
             <span class="radio-desc">gpt-4o — widely used</span>
           </div>
         </label>
+        <label class="radio-option">
+          <input type="radio" name="provider" value="mistral">
+          <div class="radio-content">
+            <span class="radio-title">Mistral AI</span>
+            <span class="radio-desc">mistral-small-latest — fast and affordable</span>
+          </div>
+        </label>
       </div>
     </section>
 
@@ -71,6 +78,15 @@
           <button class="btn-show" data-target="openaiKey">Show</button>
         </div>
         <a class="get-key-link" href="https://platform.openai.com/api-keys" target="_blank">Get an OpenAI key →</a>
+      </div>
+
+      <div class="key-group hidden" id="key-mistral">
+        <label for="mistralKey">Mistral API Key</label>
+        <div class="key-input-row">
+          <input type="password" id="mistralKey" placeholder="uuO..." autocomplete="off">
+          <button class="btn-show" data-target="mistralKey">Show</button>
+        </div>
+        <a class="get-key-link" href="https://console.mistral.ai/" target="_blank">Get a Mistral key →</a>
       </div>
     </section>
 

@@ -26,6 +26,11 @@ const TOOL_DEFS = [
     }
   },
   {
+    name: "export_pdf",
+    description: "Exports the current webpage as a PDF by capturing full-page screenshots and downloading the file. Call this whenever the user asks to save, download, or export the page as a PDF.",
+    parameters: { type: "object", properties: {}, required: [] }
+  },
+  {
     name: "answer_from_content",
     description: "Deliver your final answer to the user once you have gathered all necessary information. This ends the agent loop and the answer is shown directly to the user.",
     parameters: {
@@ -60,7 +65,7 @@ export const TOOLS_OPENAI = TOOL_DEFS.map(t => ({
 // ─── Gemini ───────────────────────────────────────────────────────────────────
 
 export async function callGemini(systemPrompt, messages, apiKey, tools) {
-  const model = "gemini-1.5-flash-latest";
+  const model = "gemini-2.0-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const response = await fetch(url, {
@@ -69,7 +74,8 @@ export async function callGemini(systemPrompt, messages, apiKey, tools) {
     body: JSON.stringify({
       system_instruction: { parts: [{ text: systemPrompt }] },
       contents: messages,
-      tools: tools
+      tools: tools,
+      generationConfig: { maxOutputTokens: 2048 }
     })
   });
 
@@ -77,7 +83,13 @@ export async function callGemini(systemPrompt, messages, apiKey, tools) {
     const err = await response.json().catch(() => ({}));
     throw new Error(err.error?.message || `Gemini API error ${response.status}`);
   }
-  return response.json();
+
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(`Gemini returned malformed JSON (${text.length} bytes): ${e.message}`);
+  }
 }
 
 // ─── Anthropic ────────────────────────────────────────────────────────────────
@@ -131,10 +143,37 @@ export async function callOpenAI(systemPrompt, messages, apiKey, tools) {
   return response.json();
 }
 
+// ─── Mistral ──────────────────────────────────────────────────────────────────
+
+export async function callMistral(systemPrompt, messages, apiKey, tools) {
+  const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Authorization": "Bearer " + apiKey,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: "mistral-small-latest",
+      max_tokens: 1024,
+      tools: tools,
+      tool_choice: "auto",
+      messages: [{ role: "system", content: systemPrompt }, ...messages]
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message || `Mistral API error ${response.status}`);
+  }
+  return response.json();
+}
+
 // ─── Response normalizer ──────────────────────────────────────────────────────
 // Converts all three providers into: { rawContent, textContent, toolCalls[] }
 
 export function normalizeResponse(response, provider) {
+  if (provider === "mistral") provider = "openai"; // same shape
+
   if (provider === "gemini") {
     const parts = response.candidates?.[0]?.content?.parts || [];
     const textParts = parts.filter(p => p.text);
@@ -176,9 +215,11 @@ export function normalizeResponse(response, provider) {
 // ─── Tool result message builder ──────────────────────────────────────────────
 
 export function buildToolResultMessage(toolResults, provider) {
+  if (provider === "mistral") provider = "openai"; // same shape
+
   if (provider === "gemini") {
     return {
-      role: "function",
+      role: "user",
       parts: toolResults.map(r => ({
         functionResponse: {
           name: r.toolName,
@@ -211,6 +252,8 @@ export function buildToolResultMessage(toolResults, provider) {
 // Gemini uses { role: "user"|"model", parts: [{text}] } instead of { role, content }
 
 export function toProviderMessage(role, content, provider) {
+  if (provider === "mistral") provider = "openai"; // same shape
+
   if (provider === "gemini") {
     const geminiRole = role === "assistant" ? "model" : role;
     if (typeof content === "string") {

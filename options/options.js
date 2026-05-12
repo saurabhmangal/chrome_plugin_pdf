@@ -2,7 +2,8 @@ const providerRadios = document.querySelectorAll('input[name="provider"]');
 const keyGroups = {
   gemini: document.getElementById("key-gemini"),
   anthropic: document.getElementById("key-anthropic"),
-  openai: document.getElementById("key-openai")
+  openai: document.getElementById("key-openai"),
+  mistral: document.getElementById("key-mistral")
 };
 const saveBtn = document.getElementById("saveBtn");
 const saveStatus = document.getElementById("saveStatus");
@@ -29,7 +30,7 @@ document.querySelectorAll(".btn-show").forEach(btn => {
 });
 
 // Load saved settings
-chrome.storage.sync.get(["aiProvider", "geminiKey", "anthropicKey", "openaiKey"], data => {
+chrome.storage.sync.get(["aiProvider", "geminiKey", "anthropicKey", "openaiKey", "mistralKey"], data => {
   const provider = data.aiProvider || "gemini";
 
   providerRadios.forEach(r => { r.checked = r.value === provider; });
@@ -38,6 +39,7 @@ chrome.storage.sync.get(["aiProvider", "geminiKey", "anthropicKey", "openaiKey"]
   if (data.geminiKey) document.getElementById("geminiKey").value = data.geminiKey;
   if (data.anthropicKey) document.getElementById("anthropicKey").value = data.anthropicKey;
   if (data.openaiKey) document.getElementById("openaiKey").value = data.openaiKey;
+  if (data.mistralKey) document.getElementById("mistralKey").value = data.mistralKey;
 });
 
 // Save settings
@@ -46,8 +48,9 @@ saveBtn.addEventListener("click", async () => {
   const geminiKey = document.getElementById("geminiKey").value.trim();
   const anthropicKey = document.getElementById("anthropicKey").value.trim();
   const openaiKey = document.getElementById("openaiKey").value.trim();
+  const mistralKey = document.getElementById("mistralKey").value.trim();
 
-  const activeKey = { gemini: geminiKey, anthropic: anthropicKey, openai: openaiKey }[provider];
+  const activeKey = { gemini: geminiKey, anthropic: anthropicKey, openai: openaiKey, mistral: mistralKey }[provider];
 
   if (!activeKey) {
     showStatus("Please enter an API key for the selected provider.", "error");
@@ -70,7 +73,7 @@ saveBtn.addEventListener("click", async () => {
     return;
   }
 
-  await chrome.storage.sync.set({ aiProvider: provider, geminiKey, anthropicKey, openaiKey });
+  await chrome.storage.sync.set({ aiProvider: provider, geminiKey, anthropicKey, openaiKey, mistralKey });
   showStatus("✓ Saved — using " + response.model, "success");
 });
 
